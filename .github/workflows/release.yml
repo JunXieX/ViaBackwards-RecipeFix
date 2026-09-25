@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.3.0
+        with:
+          cache-provider: basic
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5.7.0
+        with:
+          distribution: 'temurin'
+          java-version: 17
+          check-latest: true
+      - name: Build with Gradle
+        run: chmod +x gradlew && ./gradlew build --refresh-dependencies
+      - name: Resolve release info
+        id: info
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "${VERSION##*.}" -gt 0 ]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ steps.info.outputs.version }}
+          prerelease: ${{ steps.info.outputs.prerelease }}
+          files: build/libs/*.jar
+          body: |
+            ## 说明
+
+            本构建基于 ViaBackwards 上游 master（内部版本 5.12.1-SNAPSHOT），只包含一个修复：
+
+            - **26.3 → 26.2 降级**：26.3 起 `Ingredient` 的材料显示统一使用 tag 显示（payload 为 `HolderSet`），
+              而 26.2 的 tag 显示只接受一个命名 tag。原实现在遇到「直接物品列表」时写死占位 tag `planks`，
+              导致所有低于 26.3 的客户端（ViaVersion + ViaBackwards）配方书里的材料被显示成错误物品。
+              现在改为按 26.2 语义降级成 `item` / `composite` 显示。
+
+            ## 安装
+
+            与官方 ViaBackwards 完全一致：需要同时安装 ViaVersion，然后把 jar 放进 `plugins/` 覆盖旧的 `ViaBackwards-*.jar`。
+
+            ## 来源与许可
+
+            基于 [ViaVersion/ViaBackwards](https://github.com/ViaVersion/ViaBackwards)（GPL-3.0）修改，本仓库保留原许可与全部源码，
+            修改点见上述说明与提交记录。请勿将本构建与官方版本混淆。
+
+            声明
+
+            本项目为 MikuMC 服务器维护的补丁构建，公开给大众免费使用，MikuMC 服务器与维护者 JunXieX 享有本项目修改部分的著作权。
+            原始代码版权归 ViaVersion 及其贡献者所有，遵循 GPL-3.0。
+
+            MikuMC 系列插件交流群：1105054380

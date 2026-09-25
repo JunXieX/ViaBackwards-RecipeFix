@@ -59,6 +59,7 @@ import com.viaversion.viaversion.protocols.v26_2to26_3.rewriter.RecipeDisplayRew
 import com.viaversion.viaversion.rewriter.BlockRewriter;
 import com.viaversion.viaversion.rewriter.ParticleRewriter;
 import com.viaversion.viaversion.rewriter.RecipeDisplayRewriter;
+import com.viaversion.viaversion.rewriter.RecipeDisplayRewriter.SlotDisplayConsumer;
 import com.viaversion.viaversion.rewriter.TagRewriter;
 import com.viaversion.viaversion.util.Key;
 
@@ -81,17 +82,24 @@ public final class Protocol26_3To26_2 extends BackwardsProtocol<ClientboundPacke
         @Override
         protected void handleSlotDisplay(final PacketWrapper wrapper) {
             final FullMappings mappings = protocol.getMappingData().getSlotDisplayMappings();
-            final int type = wrapper.get(Types.VAR_INT, 0);
+            final int type = wrapper.read(Types.VAR_INT);
+            final int mappedType = mappings.getNewId(type);
             final String identifier = mappings.identifier(type);
             if (identifier == null || !Key.stripMinecraftNamespace(identifier).equals("tag")) {
-                super.handleSlotDisplay(wrapper);
+                // 非 tag 显示：与基类保持一致，只是类型 id 已经被读出来了
+                if (mappedType != -1) {
+                    wrapper.write(Types.VAR_INT, mappedType);
+                    handleSlotDisplayPayload(wrapper, mappings, type);
+                } else {
+                    wrapper.write(Types.VAR_INT, 0); // 26.2 没有这个显示类型，退化成 empty
+                    wrapper.consumeReadsOnly(() -> handleSlotDisplayPayload(wrapper, mappings, type));
+                }
                 return;
             }
 
-            // 26.3 起 Ingredient 的材料显示统一改用 tag 显示（payload 是 HolderSet），
-            // 而 26.2 的 tag 显示只接受一个命名 tag：直接物品列表必须降级成 item/composite 显示，
-            // 否则旧版客户端的配方书里会把材料显示成别的物品（此前的实现是写死占位 "planks"）。
-            final int mappedType = mappings.getNewId(type);
+            // 26.3 起 Ingredient 的材料显示统一是 tag 显示（payload 为 HolderSet），而 26.2 的 tag 显示
+            // 只接受一个命名 tag：直接物品列表必须降级成 item/composite 显示，否则旧版客户端的配方书
+            // 里材料会显示成错误物品（旧实现写死占位 "planks"）。
             final HolderSet items = wrapper.read(Types.HOLDER_SET);
             if (mappedType == -1) {
                 wrapper.write(Types.VAR_INT, 0); // 26.2 没有这个显示类型，退化成 empty
@@ -108,22 +116,34 @@ public final class Protocol26_3To26_2 extends BackwardsProtocol<ClientboundPacke
                 wrapper.write(Types.VAR_INT, 0); // empty
                 return;
             }
-            for (int i = 0; i < ids.length; i++) {
-                ids[i] = rewriteItemId(ids[i]);
+            final int itemType = mappings.mappedId("item");
+            final int compositeType = mappings.mappedId("composite");
+            if (itemType == -1 || compositeType == -1) {
+                // 兜底：拿不到目标类型 id 时退回占位 tag，避免写出非法类型 id 让客户端解码失败
+                wrapper.write(Types.VAR_INT, mappedType);
+                wrapper.write(Types.STRING, "minecraft:planks");
+                return;
             }
 
+            rewriteItemIds(ids);
             if (ids.length == 1) {
-                wrapper.write(Types.VAR_INT, mappings.mappedId("item"));
+                wrapper.write(Types.VAR_INT, itemType);
                 wrapper.write(Types.VAR_INT, ids[0]);
                 return;
             }
 
-            wrapper.write(Types.VAR_INT, mappings.mappedId("composite"));
+            wrapper.write(Types.VAR_INT, compositeType);
             wrapper.write(Types.VAR_INT, ids.length);
-            final int itemType = mappings.mappedId("item");
             for (final int id : ids) {
                 wrapper.write(Types.VAR_INT, itemType);
                 wrapper.write(Types.VAR_INT, id);
+            }
+        }
+
+        private void handleSlotDisplayPayload(final PacketWrapper wrapper, final FullMappings mappings, final int type) {
+            final SlotDisplayConsumer handler = slotDisplayHandlers.get(Key.stripMinecraftNamespace(mappings.identifier(type)));
+            if (handler != null) {
+                handler.accept(wrapper);
             }
         }
     };

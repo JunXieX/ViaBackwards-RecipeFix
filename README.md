@@ -3,7 +3,7 @@
 > ## 关于本仓库（非官方补丁构建）
 >
 > 本仓库基于 [ViaVersion/ViaBackwards](https://github.com/ViaVersion/ViaBackwards) 上游 master（内部版本 5.12.1-SNAPSHOT），
-> 仅包含一个针对 26.3 的修复，构建产物为 `ViaBackwards-5.12.1-recipefix.jar`。
+> 仅包含一个针对 26.3 的修复，构建产物为 `ViaBackwards-5.12.1-recipefix2.jar`（需要 ViaVersion 5.12.1 或同版本快照）。
 >
 > **修复内容**：ViaVersion + ViaBackwards 下，低于 26.3 的客户端进入 26.3 服务器后，配方书里显示的材料/配方内容错乱。
 > 原因是 26.3 起 `Ingredient` 的材料显示统一改用 tag 显示（payload 为 `HolderSet`），而 26.2 的 tag 显示只接受一个命名 tag；
